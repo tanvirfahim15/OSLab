@@ -7,37 +7,24 @@
 #define _PAINTSHOP_H_
 
 #endif
-struct queue *orders;
 
-struct semaphore *access_orders;
-struct semaphore *access_done;
-struct semaphore *order_ready;
-struct semaphore *access_tints;
-
-void *done_can[NCUSTOMERS];
+typedef struct paintcan paint_can;
+typedef struct semaphore _semaphore;
 
 int remaining_customers;
 
-struct queue {
-	int size;
-	int nextwrite;	// next element to write to (was head)
-	int nextread;	// next element to read from (was tail)
-	void **data;
-};
-struct queue *
-q_create(int size);
+/* buffers */
 
-int
-q_grow(struct queue *q, int targetsize);
+void *done_can[NCUSTOMERS];
 
-int
-q_addtail(struct queue *q, void *ptr);
+paint_can *order_buffer[NCUSTOMERS];
 
-int
-q_empty(struct queue *q);
+_semaphore *access_orders;
+_semaphore *full_order;
+_semaphore *empty_order;
 
-void *
-q_remhead(struct queue *q);
+_semaphore *access_tints;
 
-void
-q_destroy(struct queue *q);
+_semaphore *access_done;
+_semaphore *order_ready;
+

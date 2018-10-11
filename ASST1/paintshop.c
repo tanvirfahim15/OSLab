@@ -32,128 +32,41 @@
  *
  * The can itself contains an array of requested tints.
  */ 
-struct queue *
-q_create(int size)
-{
-
-	struct queue *q = kmalloc(sizeof(struct queue));
-	if (q==NULL) {
-		return NULL;
-	}
-	q->size = size;
-	q->data = kmalloc(size * sizeof(void *));
-	if (q->data==NULL) {
-		kfree(q);
-		return NULL;
-	}
-	q->nextread = q->nextwrite = 0;
-	return q;
-}
-int
-q_grow(struct queue *q, int targetsize)
-{
-	void **olddata = q->data;
-	int onr = q->nextread;
-	int onw = q->nextwrite;
-	int osize = q->size;
-
-	int nsize;
-	void **ndata;
-
-	int i, result;
-
-	nsize = q->size;
-	while (nsize < targetsize) {
-		nsize *= 2;
-		/* prevent infinite loop */
-		//assert(nsize > 0);
-	}
-	ndata = kmalloc(nsize * sizeof(void *));
-	if (ndata == NULL) {
-		return 1;
-	}
-	q->size = nsize;
-	q->data = ndata;
-	q->nextread = q->nextwrite = 0;
-	
-	for (i=onr; i!=onw; i = (i+1)%osize) {
-		result = q_addtail(q, olddata[i]);
-		//assert(result==0);
-	}
-	kfree(olddata);
-	return 0;
-}
-int
-q_addtail(struct queue *q, void *ptr)
-{
-	int nextnext, result;
-
-	//assert(q->size > 0);
-
-	nextnext = (q->nextwrite+1) % q->size;
-	if (nextnext==q->nextread) {
-		result = q_grow(q, q->size+1);
-		if (result) {
-			return result;
-		}
-		nextnext = (q->nextwrite+1) % q->size;
-	}
-	q->data[q->nextwrite] = ptr;
-	q->nextwrite = nextnext;
-	return 0;
-}
-int
-q_empty(struct queue *q)
-{
-	return q->nextwrite == q->nextread;
-}
-
-void *
-q_remhead(struct queue *q)
-{
-	void *ret;
-
-	//assert(q->size > 0);
-
-	//assert(!q_empty(q));
-	ret = q->data[q->nextread];
-	q->nextread = (q->nextread+1)%q->size;
-	return ret;
-}
-void
-q_destroy(struct queue *q)
-{
-	//assert(q_empty(q));
-	kfree(q->data);
-	kfree(q);
-}
 
 void order_paint(struct paintcan *can)
 {
-	P(access_orders);
-	q_addtail(orders, can);
-	V(access_orders);
+    P(empty_order);
+    P(access_orders);
+    int i;
+    for(i = 0; i < NCUSTOMERS; i++)
+    {
+        if(order_buffer[i] == NULL)
+        {
+            order_buffer[i] = can;
+            break;
+        }
+    }
+    V(access_orders);
+    V(full_order);
 
-	int found = 0;
-	while(!found) {
-		P(order_ready);
-		P(access_done);
-		int i;
-		for(i = 0; i < NCUSTOMERS; i++) {
-			if(can == (struct paintcan *) done_can[i]) {
-				done_can[i] = NULL;
-				found = 1;
-				break;
-			}
-		}
-		V(access_done);
-		if(!found) {
-			V(order_ready);
-			thread_yield();
-		}
+    int found = 0;
+    while(!found) {
+	P(order_ready);
+	P(access_done);
+	int i;
+	for(i = 0; i < NCUSTOMERS; i++) {
+	    if(can == (struct paintcan *) done_can[i]) {
+		done_can[i] = NULL;
+		found = 1;
+		break;
+	    }
 	}
-
-
+	V(access_done);
+	if(!found) {
+	    V(order_ready);
+	    thread_yield();
+	}
+    }
 }
 
 
@@ -168,9 +81,9 @@ void order_paint(struct paintcan *can)
 
 void go_home()
 {
-remaining_customers--;
-}
 
+    remaining_customers--;
+}
 
 
 /*
@@ -195,25 +108,39 @@ remaining_customers--;
  
 void * take_order()
 {
-void *ret;
+    
+    
+    void *order;
+    while(1){
+    if(remaining_customers == 0)
+    {
+	return NULL;
+    }
 
-	P(access_orders);
-	while(q_empty(orders)) {
-		V(access_orders);
-		if(remaining_customers == 0) {
-			ret = NULL;
-			return ret;
-		}
-		else {
-			thread_yield();
-			P(access_orders);
-		}
-	}
+    bool flag = false;
+    P(full_order);
+    P(access_orders);
+    int i;
+    for(i = 0; i < NCUSTOMERS; i++)
+    {
+        if(order_buffer[i] != NULL)
+        {
+	    order = (void *)order_buffer[i];
+            order_buffer[i] = NULL;
+	    flag = true;
+            break;
+        }
+    }
 
-	ret = q_remhead(orders);
-	V(access_orders);
+    V(access_orders);
+    V(full_order);
+    if(flag){
+        V(empty_order);
+	break;    
+    }
 
-	return ret;
+    }
+    return order;
 }
 
 
@@ -229,9 +156,10 @@ void *ret;
 
 void fill_order(void *v)
 {
-P(access_tints);
-	mix(v);
-	V(access_tints);
+
+    P(access_tints);
+    mix(v);
+    V(access_tints);
 }
 
 
@@ -243,16 +171,16 @@ P(access_tints);
 
 void serve_order(void *v)
 {
-int i;
-	P(access_done);
-	for(i = 0; i < NCUSTOMERS; i++) {
-		if(done_can[i] == NULL) {
-			done_can[i] = v;
-			break;
-		}
-	}
-	V(access_done);
-	V(order_ready);
+    int i;
+    P(access_done);
+    for(i = 0; i < NCUSTOMERS; i++) {
+	if(done_can[i] == NULL) {
+	    done_can[i] = v;
+	    break;
+        }
+    }
+    V(access_done);
+    V(order_ready);
 }
 
 
@@ -273,17 +201,18 @@ int i;
 
 void paintshop_open()
 {
+    remaining_customers = NCUSTOMERS;
+    
+    access_orders = sem_create("access_orders", 1);
+    empty_order = sem_create("empty_order", NCUSTOMERS);
+    full_order = sem_create("full_order", 0);
+    
+    access_done   = sem_create("access_done", 1);
+    order_ready   = sem_create("order_ready", 0);
+	
+    access_tints = sem_create("access_tints", 1);
 
-remaining_customers = NCUSTOMERS;
-	orders = q_create(NCUSTOMERS);
-	access_orders = sem_create("access_orders", 1);
-	access_done   = sem_create("access_done", 1);
-	order_ready   = sem_create("order_ready", 0);
-	access_tints  = sem_create("access_tints", 1);
-	int i;
-	for(i = 0; i < NCUSTOMERS; i++) {
-		done_can[i] = NULL;
-	}
+
 }
 
 /*
@@ -294,9 +223,12 @@ remaining_customers = NCUSTOMERS;
  */
 
 void paintshop_close()
-{q_destroy(orders);
-	sem_destroy(access_orders);
-	sem_destroy(access_done);
-	sem_destroy(order_ready);
-	sem_destroy(access_tints);
+{
+sem_destroy(access_orders);
+sem_destroy(empty_order);
+sem_destroy(full_order);
+sem_destroy(access_tints);
+sem_destroy(access_done);
+sem_destroy(order_ready);
+
 }

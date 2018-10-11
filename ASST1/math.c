@@ -76,6 +76,7 @@ void adder(void * unusedpointer, unsigned long addernumber)
   while (flag) {
     /* loop doing increments until we achieve the overall number
        of increments */
+
     P(mutex);
     a = counter;
 
@@ -98,8 +99,8 @@ void adder(void * unusedpointer, unsigned long addernumber)
     else {
       flag = 0;
     }
-    V(mutex);
-    
+
+   V(mutex);
   }
 
   /* signal the main thread we have finished and then exit */
@@ -138,6 +139,7 @@ int maths (int nargs,char ** args)
   if (finished == NULL) {
     panic("maths: sem create failed");
   }
+
   mutex = sem_create("mutex", 1);
   if (mutex == NULL) {
     panic("maths: sem create failed");
