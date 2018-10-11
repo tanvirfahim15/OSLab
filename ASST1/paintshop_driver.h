@@ -86,5 +86,5 @@ extern void mix(struct paintcan *);
  */ 
 
 
-#define NCUSTOMERS 100     /* The number of customers painting today*/
+#define NCUSTOMERS 120     /* The number of customers painting today*/
 #define NPAINTSHOPSTAFF 3 /* The number of paint shop staff working today */

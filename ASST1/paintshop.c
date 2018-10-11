@@ -153,13 +153,27 @@ void * take_order()
  * NOTE: IT NEEDS TO ENSURE THAT MIX HAS EXCLUSIVE ACCESS TO THE TINTS
  * IT NEEDS TO USE TO FILE THE ORDER.
  */
-
+void wait(struct paintcan *c){
+    int i,col;
+    for(i = 0; i < PAINT_COMPLEXITY; i++) {
+	col = c->requested_colours[i] - 1;
+      	if(col > 0)
+	    P(tintSem[col]);   
+    }
+}
+void signal(struct paintcan *c){
+    int i,col;   
+    for(i = 0; i < PAINT_COMPLEXITY; i++) {
+	col = c->requested_colours[i] - 1;
+	if(col > 0)
+	    V(tintSem[col]);   
+    }
+}
 void fill_order(void *v)
 {
-
-    P(access_tints);
+    wait(v);
     mix(v);
-    V(access_tints);
+    signal(v);
 }
 
 
@@ -210,8 +224,10 @@ void paintshop_open()
     access_done   = sem_create("access_done", 1);
     order_ready   = sem_create("order_ready", 0);
 	
-    access_tints = sem_create("access_tints", 1);
 
+    int i;
+    for(i = 0 ; i < NCOLOURS ; i++)
+        tintSem[i] = sem_create("tint sem", 1);
 
 }
 
@@ -227,8 +243,11 @@ void paintshop_close()
 sem_destroy(access_orders);
 sem_destroy(empty_order);
 sem_destroy(full_order);
-sem_destroy(access_tints);
 sem_destroy(access_done);
 sem_destroy(order_ready);
+
+    int i;
+    for(i = 0 ; i < NCOLOURS ; i++)
+        sem_destroy(tintSem[i]);
 
 }

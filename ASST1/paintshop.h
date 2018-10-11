@@ -28,3 +28,6 @@ _semaphore *access_tints;
 _semaphore *access_done;
 _semaphore *order_ready;
 
+
+static struct semaphore *tintSem[NCOLOURS];
+
