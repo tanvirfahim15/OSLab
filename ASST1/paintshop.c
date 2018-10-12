@@ -4,10 +4,20 @@
 #include <test.h>
 #include <thread.h>
 
-#include "paintshop_driver.h"
 
 #include "paintshop.h"
 
+#include "paintshop_driver.h"
+
+void order_paint(paint_can *can);
+void go_home(void);
+void * take_order(void);
+void fill_order(void *v);
+void serve_order(void *v);
+void paintshop_open(void);
+void paintshop_close(void);
+void wait_on_tints(struct paintcan *c);
+void signal_on_tints(struct paintcan *c);
 
 /*
  * **********************************************************************
@@ -35,6 +45,8 @@
 
 void order_paint(struct paintcan *can)
 {
+    // Places order
+    // Waits if order buffer is full
     P(empty_order);
     P(access_orders);
     int i;
@@ -49,8 +61,11 @@ void order_paint(struct paintcan *can)
     V(access_orders);
     V(full_order);
 
+
     int found = 0;
-    while(!found) {
+    while(!found) { 
+	// Scans the done buffer for the ordered can 
+	// Sleeps and let other customer to scan for cans, if not found
 	P(order_ready);
 	P(access_done);
 	int i;
@@ -81,7 +96,7 @@ void order_paint(struct paintcan *can)
 
 void go_home()
 {
-
+    // update remaining customer
     remaining_customers--;
 }
 
@@ -108,37 +123,36 @@ void go_home()
  
 void * take_order()
 {
-    
-    
+    // if there is no customer, returns null
+    // otherwise, a order from order buffer
     void *order;
     while(1){
-    if(remaining_customers == 0)
-    {
-	return NULL;
-    }
-
-    bool flag = false;
-    P(full_order);
-    P(access_orders);
-    int i;
-    for(i = 0; i < NCUSTOMERS; i++)
-    {
-        if(order_buffer[i] != NULL)
+        if(remaining_customers == 0)
         {
-	    order = (void *)order_buffer[i];
-            order_buffer[i] = NULL;
-	    flag = true;
-            break;
+	    return NULL;
         }
-    }
 
-    V(access_orders);
-    V(full_order);
-    if(flag){
-        V(empty_order);
-	break;    
-    }
+        bool flag = false;
+        P(full_order);
+        P(access_orders);
+        int i;
+        for(i = 0; i < NCUSTOMERS; i++)
+        {
+            if(order_buffer[i] != NULL)
+            {
+	        order = (void *)order_buffer[i];
+                order_buffer[i] = NULL;
+	        flag = true;
+                break;
+            }
+        }
 
+        V(access_orders);
+        V(full_order);
+        if(flag){
+            V(empty_order);
+       	    break;    
+        }
     }
     return order;
 }
@@ -153,27 +167,29 @@ void * take_order()
  * NOTE: IT NEEDS TO ENSURE THAT MIX HAS EXCLUSIVE ACCESS TO THE TINTS
  * IT NEEDS TO USE TO FILE THE ORDER.
  */
-void wait(struct paintcan *c){
-    int i,col;
+void wait_on_tints(struct paintcan *c){
+    int i;
+    int tint;
     for(i = 0; i < PAINT_COMPLEXITY; i++) {
-	col = c->requested_colours[i] - 1;
-      	if(col > 0)
-	    P(tintSem[col]);   
+	tint = c->requested_colours[i] - 1;
+      	if(tint >= 0)
+	    P(access_tints[tint]);   
     }
 }
-void signal(struct paintcan *c){
-    int i,col;   
+void signal_on_tints(struct paintcan *c){
+    int i;
+    int tint;   
     for(i = 0; i < PAINT_COMPLEXITY; i++) {
-	col = c->requested_colours[i] - 1;
-	if(col > 0)
-	    V(tintSem[col]);   
+	tint = c->requested_colours[i] - 1;
+	if(tint >= 0)
+	    V(access_tints[tint]);   
     }
 }
 void fill_order(void *v)
 {
-    wait(v);
-    mix(v);
-    signal(v);
+    wait_on_tints(v); // lock required tints only in the increasing order
+    mix(v);	// mixes using acquired tints
+    signal_on_tints(v); // release locks on tints
 }
 
 
@@ -185,6 +201,7 @@ void fill_order(void *v)
 
 void serve_order(void *v)
 {
+    // put mixed order on done buffer
     int i;
     P(access_done);
     for(i = 0; i < NCUSTOMERS; i++) {
@@ -215,8 +232,9 @@ void serve_order(void *v)
 
 void paintshop_open()
 {
-    remaining_customers = NCUSTOMERS;
+    remaining_customers = NCUSTOMERS; //Initialize remaining customers as total customers
     
+    // Initializing neccesary semaphores
     access_orders = sem_create("access_orders", 1);
     empty_order = sem_create("empty_order", NCUSTOMERS);
     full_order = sem_create("full_order", 0);
@@ -224,10 +242,16 @@ void paintshop_open()
     access_done   = sem_create("access_done", 1);
     order_ready   = sem_create("order_ready", 0);
 	
-
+    if(NCUSTOMERS>10000){
+        panic("CUSTOMERS more than 10000 is not supported");
+    }
+    if(NCOLOURS>10000){
+        panic("Color more than 10000 is not supported");
+    }
+    // Initializing mutex semaphore for each tint of color
     int i;
     for(i = 0 ; i < NCOLOURS ; i++)
-        tintSem[i] = sem_create("tint sem", 1);
+        access_tints[i] = sem_create("access_tints", 1);
 
 }
 
@@ -240,14 +264,15 @@ void paintshop_open()
 
 void paintshop_close()
 {
-sem_destroy(access_orders);
-sem_destroy(empty_order);
-sem_destroy(full_order);
-sem_destroy(access_done);
-sem_destroy(order_ready);
+    // destroying all semaphores
+    sem_destroy(access_orders);
+    sem_destroy(empty_order);
+    sem_destroy(full_order);
+    sem_destroy(access_done);
+    sem_destroy(order_ready);
 
     int i;
     for(i = 0 ; i < NCOLOURS ; i++)
-        sem_destroy(tintSem[i]);
+        sem_destroy(access_tints[i]);
 
 }

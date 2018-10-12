@@ -13,21 +13,17 @@ typedef struct semaphore _semaphore;
 
 int remaining_customers;
 
-/* buffers */
+void *done_can[10000];
 
-void *done_can[NCUSTOMERS];
-
-paint_can *order_buffer[NCUSTOMERS];
+paint_can *order_buffer[10000];
 
 _semaphore *access_orders;
 _semaphore *full_order;
 _semaphore *empty_order;
 
-_semaphore *access_tints;
-
 _semaphore *access_done;
 _semaphore *order_ready;
 
 
-static struct semaphore *tintSem[NCOLOURS];
+_semaphore *access_tints[10000];
 
