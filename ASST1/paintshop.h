@@ -24,6 +24,7 @@ _semaphore *empty_order;
 _semaphore *access_done;
 _semaphore *order_ready;
 
+_semaphore *remaining_customers_sem;
 
 _semaphore *access_tints[10000];
 

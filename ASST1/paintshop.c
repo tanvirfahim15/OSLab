@@ -97,7 +97,9 @@ void order_paint(struct paintcan *can)
 void go_home()
 {
     // update remaining customer
+    P(remaining_customers_sem);
     remaining_customers--;
+    V(remaining_customers_sem);
 }
 
 
@@ -127,11 +129,17 @@ void * take_order()
     // otherwise, a order from order buffer
     void *order;
     while(1){
+        P(remaining_customers_sem);
         if(remaining_customers == 0)
         {
+            V(remaining_customers_sem);
 	    return NULL;
         }
-
+        else{
+	    V(remaining_customers_sem);
+        }
+        
+        
         bool flag = false;
         P(full_order);
         P(access_orders);
@@ -169,20 +177,40 @@ void * take_order()
  */
 void wait_on_tints(struct paintcan *c){
     int i;
-    int tint;
+    int tint =0;
+    int tint_needed[NCOLOURS];
+    for(i = 0; i < NCOLOURS; i++){
+	tint_needed[i] = 0;
+    }
     for(i = 0; i < PAINT_COMPLEXITY; i++) {
 	tint = c->requested_colours[i] - 1;
       	if(tint >= 0)
-	    P(access_tints[tint]);   
+	    tint_needed[tint]=1;
+	
+    }
+    for(i = 0; i < NCOLOURS; i++){
+	if(tint_needed[i] == 1){
+	   P(access_tints[i]);
+	}
     }
 }
 void signal_on_tints(struct paintcan *c){
     int i;
-    int tint;   
+    int tint =0;
+    int tint_needed[NCOLOURS];
+    for(i = 0; i < NCOLOURS; i++){
+	tint_needed[i] = 0;
+    }
     for(i = 0; i < PAINT_COMPLEXITY; i++) {
 	tint = c->requested_colours[i] - 1;
-	if(tint >= 0)
-	    V(access_tints[tint]);   
+      	if(tint >= 0)
+	    tint_needed[tint]=1;
+	
+    }
+    for(i = 0; i < NCOLOURS; i++){
+	if(tint_needed[i] == 1){
+	   V(access_tints[i]);
+	}
     }
 }
 void fill_order(void *v)
@@ -241,6 +269,8 @@ void paintshop_open()
     
     access_done   = sem_create("access_done", 1);
     order_ready   = sem_create("order_ready", 0);
+
+    remaining_customers_sem = sem_create("remaining_customers", 1);
 	
     if(NCUSTOMERS>10000){
         panic("CUSTOMERS more than 10000 is not supported");
@@ -270,6 +300,7 @@ void paintshop_close()
     sem_destroy(full_order);
     sem_destroy(access_done);
     sem_destroy(order_ready);
+    sem_destroy(remaining_customers_sem);
 
     int i;
     for(i = 0 ; i < NCOLOURS ; i++)

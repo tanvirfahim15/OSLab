@@ -86,7 +86,8 @@ void adder(void * unusedpointer, unsigned long addernumber)
 
       b = counter;
 
-
+      
+      V(mutex);
       /* count the number of increments we perform  for statistics */
       adder_counters[addernumber]++;    
 
@@ -97,10 +98,11 @@ void adder(void * unusedpointer, unsigned long addernumber)
       }
     }
     else {
+
+      V(mutex);
       flag = 0;
     }
 
-   V(mutex);
   }
 
   /* signal the main thread we have finished and then exit */
