@@ -47,6 +47,9 @@ void order_paint(struct paintcan *can)
 {
     // Places order
     // Waits if order buffer is full
+    struct Order *order = kmalloc(sizeof(struct Order));
+    order->can = can;
+    order->ready = sem_create("order_ready", 0);
     P(empty_order);
     P(access_orders);
     int i;
@@ -54,34 +57,16 @@ void order_paint(struct paintcan *can)
     {
         if(order_buffer[i] == NULL)
         {
-            order_buffer[i] = can;
+	    order_buffer[i] = order;
             break;
         }
     }
     V(access_orders);
     V(full_order);
-
-
-    int found = 0;
-    while(!found) { 
-	// Scans the done buffer for the ordered can 
-	// Sleeps and let other customer to scan for cans, if not found
-	P(order_ready);
-	P(access_done);
-	int i;
-	for(i = 0; i < NCUSTOMERS; i++) {
-	    if(can == (struct paintcan *) done_can[i]) {
-		done_can[i] = NULL;
-		found = 1;
-		break;
-	    }
-	}
-	V(access_done);
-	if(!found) {
-	    V(order_ready);
-	    thread_yield();
-	}
-    }
+    P(order->ready);
+    sem_destroy(order->ready);
+    kfree(order);
+    
 }
 
 
@@ -148,7 +133,7 @@ void * take_order()
         {
             if(order_buffer[i] != NULL)
             {
-	        order = (void *)order_buffer[i];
+	        order = order_buffer[i];
                 order_buffer[i] = NULL;
 	        flag = true;
                 break;
@@ -156,11 +141,13 @@ void * take_order()
         }
 
         V(access_orders);
-        V(full_order);
+	V(full_order);
+        
         if(flag){
             V(empty_order);
        	    break;    
         }
+	
     }
     return order;
 }
@@ -215,9 +202,11 @@ void signal_on_tints(struct paintcan *c){
 }
 void fill_order(void *v)
 {
-    wait_on_tints(v); // lock required tints only in the increasing order
-    mix(v);	// mixes using acquired tints
-    signal_on_tints(v); // release locks on tints
+    struct Order * order=(struct Order *)v;
+    struct paintcan *can = order->can;
+    wait_on_tints(can); // lock required tints only in the increasing order
+    mix((void *)can);	// mixes using acquired tints
+    signal_on_tints(can); // release locks on tints
 }
 
 
@@ -229,17 +218,8 @@ void fill_order(void *v)
 
 void serve_order(void *v)
 {
-    // put mixed order on done buffer
-    int i;
-    P(access_done);
-    for(i = 0; i < NCUSTOMERS; i++) {
-	if(done_can[i] == NULL) {
-	    done_can[i] = v;
-	    break;
-        }
-    }
-    V(access_done);
-    V(order_ready);
+    struct Order * order=(struct Order *)v;
+    V(order->ready);
 }
 
 

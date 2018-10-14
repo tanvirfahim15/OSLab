@@ -10,12 +10,17 @@
 
 typedef struct paintcan paint_can;
 typedef struct semaphore _semaphore;
+struct Order {
+  struct paintcan *can;
+  struct semaphore *ready;
+};
+
 
 int remaining_customers;
 
-void *done_can[10000];
+struct Order *done_can[10000];
 
-paint_can *order_buffer[10000];
+struct Order *order_buffer[10000];
 
 _semaphore *access_orders;
 _semaphore *full_order;
